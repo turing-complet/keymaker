@@ -103,21 +103,25 @@ func aesEncrypt(w http.ResponseWriter, r *http.Request) {
 	nonce := make([]byte, gcm.NonceSize())
 	io.ReadFull(rand.Reader, nonce)
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-	json.NewEncoder(w).Encode(ciphertext)
+	json.NewEncoder(w).Encode(hex.EncodeToString(ciphertext))
 }
 
 func aesDecrypt(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("doing decryption")
 	params := mux.Vars(r)
 	keyid := params["keyid"]
-	fmt.Printf("ciphertext: %v", params["ciphertext"])
-	ciphertext := []byte(params["ciphertext"])
-	fmt.Printf("ciphertext_bytes: %v", ciphertext)
-	key := symmetricKeys[keyid]
+	ciphertext, _ := hex.DecodeString(params["ciphertext"])
+	key, exists := symmetricKeys[keyid]
+	if !exists {
+		json.NewEncoder(w).Encode("Key not found.")
+	}
 	block, _ := aes.NewCipher(key)
 	gcm, _ := cipher.NewGCM(block)
+	if len(ciphertext) < gcm.NonceSize() {
+		json.NewEncoder(w).Encode("malformed ciphertext")
+	}
 	plaintext, _ := gcm.Open(nil, ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():], nil)
-	json.NewEncoder(w).Encode(plaintext)
+	json.NewEncoder(w).Encode(string(plaintext))
 }
 
 func createRsaKey(w http.ResponseWriter, r *http.Request) {
@@ -141,5 +145,6 @@ func main() {
 	// router.HandleFunc("/rsa/sign/{message}", rsaSign)
 	// router.HandleFunc("/rsa/verify/{message}/{signature}", rsaVerify)
 
+	fmt.Println("Starting server on port 8080")
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
