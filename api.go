@@ -27,8 +27,21 @@ type symmetricKey struct {
 	Key []byte
 }
 
-func index(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode("Welcome to the secret cryptographic service 😎")
+func index(router *mux.Router) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode("Welcome to the secret cryptographic service 😎\n")
+		router.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+			path, err := route.GetPathTemplate()
+			if err != nil {
+				return err
+			}
+			// fmt.Println(path)
+			json.NewEncoder(w).Encode(path)
+			// queriesTemplate, err := route.GetQueriesTemplates()
+			// fmt.Println(queriesTemplate)
+			return nil
+		})
+	}
 }
 
 func getUUID(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +58,17 @@ func newUUID() string {
 func sha256Api(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	sum := sha256.Sum256([]byte(params["data"]))
-	switch params["encoding"] {
+	writeHashResponse(sum[:], params["encoding"], w)
+}
+
+func sha512Api(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	sum := sha512.Sum512([]byte(params["data"]))
+	writeHashResponse(sum[:], params["encoding"], w)
+}
+
+func writeHashResponse(sum []byte, encoding string, w http.ResponseWriter) {
+	switch encoding {
 	case "bytes":
 		json.NewEncoder(w).Encode(sum)
 	case "hex":
@@ -53,35 +76,25 @@ func sha256Api(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func sha512Api(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
-	sum := sha512.Sum512([]byte(params["data"]))
-	json.NewEncoder(w).Encode(sum)
-}
-
 func createSymmKey(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
-		json.NewEncoder(w).Encode("Use POST endpoint to create a symmetric key.")
+	params := mux.Vars(r)
+	bits, err := strconv.Atoi(params["bits"])
+	if err != nil {
+		json.NewEncoder(w).Encode("Please specity bits as query string")
+		return
+	}
+	key := make([]byte, bits/8)
+	_, err = rand.Read(key)
+	if err != nil {
+		json.NewEncoder(w).Encode(err)
 	} else {
-		params := mux.Vars(r)
-		bits, err := strconv.Atoi(params["bits"])
-		if err != nil {
-			json.NewEncoder(w).Encode("Please specity bits as query string")
-			return
+		keyid := newUUID()
+		symmetricKeys[keyid] = key
+		resp := &symmetricKey{
+			ID:  keyid,
+			Key: key,
 		}
-		key := make([]byte, bits/8)
-		_, err = rand.Read(key)
-		if err != nil {
-			json.NewEncoder(w).Encode(err)
-		} else {
-			keyid := newUUID()
-			symmetricKeys[keyid] = key
-			resp := &symmetricKey{
-				ID:  keyid,
-				Key: key,
-			}
-			json.NewEncoder(w).Encode(resp)
-		}
+		json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -131,12 +144,12 @@ func createRsaKey(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	router := mux.NewRouter()
-	router.HandleFunc("/", index)
+	router.HandleFunc("/", index(router))
 	router.HandleFunc("/uuid", getUUID)
 	router.HandleFunc("/sha256/{data}", sha256Api).Methods("GET").Queries("encoding", "{encoding}")
 	router.HandleFunc("/sha512/{data}", sha512Api)
-	router.HandleFunc("/symmetrickey", createSymmKey).Queries("bits", "{bits}")
-	router.HandleFunc("/listkeys", listSymmKeys)
+	router.HandleFunc("/symmetrickeys", createSymmKey).Queries("bits", "{bits}").Methods("POST")
+	router.HandleFunc("/symmetrickeys", listSymmKeys).Methods("GET")
 	router.HandleFunc("/aes/encrypt/{plaintext}", aesEncrypt).Queries("keyid", "{keyid}")
 	router.HandleFunc("/aes/decrypt/{ciphertext}", aesDecrypt).Queries("keyid", "{keyid}")
 	router.HandleFunc("/rsa/keys", createRsaKey)
@@ -146,5 +159,6 @@ func main() {
 	// router.HandleFunc("/rsa/verify/{message}/{signature}", rsaVerify)
 
 	fmt.Println("Starting server on port 8080")
+
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
