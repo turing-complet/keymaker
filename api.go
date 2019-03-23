@@ -5,19 +5,16 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os/exec"
 	"strconv"
-	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/turing-complet/keymaker/keymaker"
 )
 
 var symmetricKeys = make(map[string][]byte)
@@ -45,35 +42,19 @@ func index(router *mux.Router) func(w http.ResponseWriter, r *http.Request) {
 }
 
 func getUUID(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(newUUID())
-}
-
-func newUUID() string {
-	uuid, _ := exec.Command("uuidgen").Output()
-	// fmt.Printf("%s", uuid)
-	return strings.TrimSuffix(string(uuid), "\n")
-
+	json.NewEncoder(w).Encode(keymaker.NewUUID())
 }
 
 func sha256Api(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	sum := sha256.Sum256([]byte(params["data"]))
-	writeHashResponse(sum[:], params["encoding"], w)
+	resp := keymaker.Sha256(params["data"], params["encoding"])
+	json.NewEncoder(w).Encode(resp)
 }
 
 func sha512Api(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	sum := sha512.Sum512([]byte(params["data"]))
-	writeHashResponse(sum[:], params["encoding"], w)
-}
-
-func writeHashResponse(sum []byte, encoding string, w http.ResponseWriter) {
-	switch encoding {
-	case "bytes":
-		json.NewEncoder(w).Encode(sum)
-	case "hex":
-		json.NewEncoder(w).Encode(hex.EncodeToString(sum[:]))
-	}
+	resp := keymaker.Sha512(params["data"], params["encoding"])
+	json.NewEncoder(w).Encode(resp)
 }
 
 func createSymmKey(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +69,7 @@ func createSymmKey(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		json.NewEncoder(w).Encode(err)
 	} else {
-		keyid := newUUID()
+		keyid := keymaker.NewUUID()
 		symmetricKeys[keyid] = key
 		resp := &symmetricKey{
 			ID:  keyid,
@@ -146,8 +127,8 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/", index(router))
 	router.HandleFunc("/uuid", getUUID)
-	router.HandleFunc("/sha256/{data}", sha256Api).Methods("GET").Queries("encoding", "{encoding}")
-	router.HandleFunc("/sha512/{data}", sha512Api)
+	router.HandleFunc("/sha256/{data}", sha256Api).Queries("encoding", "{encoding}")
+	router.HandleFunc("/sha512/{data}", sha512Api).Queries("encoding", "{encoding}")
 	router.HandleFunc("/symmetrickeys", createSymmKey).Queries("bits", "{bits}").Methods("POST")
 	router.HandleFunc("/symmetrickeys", listSymmKeys).Methods("GET")
 	router.HandleFunc("/aes/encrypt/{plaintext}", aesEncrypt).Queries("keyid", "{keyid}")
