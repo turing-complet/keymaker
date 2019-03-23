@@ -57,6 +57,23 @@ func sha512Api(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func computeHmac(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	keyid := params["keyid"]
+	key, _ := symmetricKeys[keyid]
+	hmac := keymaker.Hmac([]byte(params["data"]), key)
+	json.NewEncoder(w).Encode(hex.EncodeToString(hmac))
+}
+
+func hmacValidate(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	keyid := params["keyid"]
+	key, _ := symmetricKeys[keyid]
+	macBytes, _ := hex.DecodeString(params["mac"])
+	valid := keymaker.ValidateHmac([]byte(params["data"]), macBytes, key)
+	json.NewEncoder(w).Encode(valid)
+}
+
 func createSymmKey(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	bits, err := strconv.Atoi(params["bits"])
@@ -129,15 +146,23 @@ func main() {
 	router.HandleFunc("/uuid", getUUID)
 	router.HandleFunc("/sha256/{data}", sha256Api).Queries("encoding", "{encoding}")
 	router.HandleFunc("/sha512/{data}", sha512Api).Queries("encoding", "{encoding}")
+
+	router.HandleFunc("/hmac/{data}", computeHmac).Queries("keyid", "{keyid}")
+	router.HandleFunc("/hmac/validate/{data}/{mac}", hmacValidate).Queries("keyid", "{keyid}")
+	// router.HandleFunc("/bcrypt/{data}", bcrypt).Queries("keyid", "{keyid}")
+
 	router.HandleFunc("/symmetrickeys", createSymmKey).Queries("bits", "{bits}").Methods("POST")
 	router.HandleFunc("/symmetrickeys", listSymmKeys).Methods("GET")
 	router.HandleFunc("/aes/encrypt/{plaintext}", aesEncrypt).Queries("keyid", "{keyid}")
 	router.HandleFunc("/aes/decrypt/{ciphertext}", aesDecrypt).Queries("keyid", "{keyid}")
+
 	router.HandleFunc("/rsa/keys", createRsaKey)
 	// router.HandleFunc("/rsa/encrypt/{plaintext}", rsaEncrypt)
 	// router.HandleFunc("/rsa/decrypt/{ciphertext}", rsaDecrypt)
 	// router.HandleFunc("/rsa/sign/{message}", rsaSign)
 	// router.HandleFunc("/rsa/verify/{message}/{signature}", rsaVerify)
+
+	// generate key from passphrase
 
 	fmt.Println("Starting server on port 8080")
 
