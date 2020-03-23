@@ -1,6 +1,6 @@
 Welcome to keymaker, the swiss army knife for cryptography. It's meant to provide an interface 
 for common cryptographic operations in the form of a docker container that can be run as a
-REST API for as a cli tool. Keymaker uses native go crypto libraries to provide reliable implementations
+REST API or as a cli tool. Keymaker uses native go crypto libraries to provide reliable implementations
 but use at your own risk.
 
 Usage:
